@@ -142,7 +142,7 @@ export default function Login() {
       if (r?.data?.code === 0) {
         const d = r.data.data
         if (!d.initialized) setMode('init')
-        else setRegEnabled(d.register_enabled)
+        else setRegEnabled(d.register_enabled !== false)
       }
     }).catch(() => {}).finally(() => setInitChecked(true))
   }, [])
