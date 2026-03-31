@@ -25,8 +25,14 @@ rm -rf /root/prism
 echo -e "${RED}[5/5]${NC} 清理数据库..."
 read -p "是否删除数据库? (yes/no): " del_db
 if [[ "$del_db" == "yes" ]]; then
-    mysql -u root -e "DROP DATABASE IF EXISTS prism_HMHd951u;" 2>/dev/null || true
-    echo "数据库已删除"
+    if [[ -f /root/prism/.env ]]; then
+        source /root/prism/.env
+        mysql -u root -e "DROP DATABASE IF EXISTS ${DB_NAME};" 2>/dev/null || true
+        mysql -u root -e "DROP USER IF EXISTS '${DB_USER}'@'127.0.0.1';" 2>/dev/null || true
+        echo "数据库已删除"
+    else
+        echo "未找到 .env 文件，跳过数据库清理"
+    fi
 fi
 
 echo -e "${GREEN}✓ 卸载完成${NC}"
