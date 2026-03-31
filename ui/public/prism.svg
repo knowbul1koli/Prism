@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="pg" x1="0" y1="0" x2="48" y2="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="50%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <polygon points="24,4 44,38 4,38" stroke="url(#pg)" stroke-width="2.5" fill="none" stroke-linejoin="round"/>
+  <line x1="24" y1="4" x2="14" y2="38" stroke="#7c3aed" stroke-width="1.2" opacity="0.5"/>
+  <line x1="24" y1="4" x2="34" y2="38" stroke="#06b6d4" stroke-width="1.2" opacity="0.5"/>
+  <circle cx="24" cy="4" r="2" fill="#7c3aed"/>
+  <circle cx="44" cy="38" r="2" fill="#4f46e5"/>
+  <circle cx="4" cy="38" r="2" fill="#06b6d4"/>
+</svg>

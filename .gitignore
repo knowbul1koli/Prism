@@ -1,0 +1,26 @@
+# Binaries (use GitHub Releases)
+backend.jar
+ui/public/gost-amd64
+ui/public/gost-arm64
+
+# Dependencies
+ui/node_modules/
+ui/dist/
+
+# Logs
+logs/
+*.log
+logDir_IS_UNDEFINED/
+ui/logDir_IS_UNDEFINED/
+
+# Runtime
+tmp_jar/
+decompile/
+
+# Environment (contains credentials)
+.env
+
+# IDE
+.idea/
+.vscode/
+*.swp
