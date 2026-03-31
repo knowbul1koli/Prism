@@ -1,7 +1,4 @@
 #!/bin/bash
-# Prism Panel 一键安装脚本
-# 适用系统：Debian 12 / Ubuntu 22.04+
-
 set -e
 
 RED='\033[0;31m'
@@ -11,33 +8,35 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 
 info() { echo -e "${CYAN}[INFO]${NC} $*"; }
-success() { echo -e "${GREEN}[SUCCESS]${NC} $*"; }
-error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
-warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+success() { echo -e "${GREEN}[✓]${NC} $*"; }
+error() { echo -e "${RED}[✗]${NC} $*"; exit 1; }
+warn() { echo -e "${YELLOW}[!]${NC} $*"; }
 
-# 检查 root 权限
-[[ $EUID -ne 0 ]] && error "请使用 root 权限运行此脚本"
+generate_random() {
+    LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c16
+}
+
+[[ $EUID -ne 0 ]] && error "请使用 root 权限运行"
 
 PRISM_DIR="/root/prism"
-cd "$PRISM_DIR" || error "目录 $PRISM_DIR 不存在"
+cd "$PRISM_DIR" || error "目录不存在"
 
-info "开始安装 Prism Panel..."
+echo -e "${CYAN}╔═══════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║     🌟 Prism Panel 安装程序          ║${NC}"
+echo -e "${CYAN}╚═══════════════════════════════════════╝${NC}"
+echo ""
 
-# 1. 检查并安装 Docker
-info "检查 Docker..."
+# 1. 安装 Docker
+info "[1/8] 检查 Docker..."
 if ! command -v docker &>/dev/null; then
     info "安装 Docker..."
-    apt-get update
+    apt-get update -qq
     apt-get install -y ca-certificates curl gnupg
     install -m 0755 -d /etc/apt/keyrings
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg 2>/dev/null
     chmod a+r /etc/apt/keyrings/docker.gpg
-
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
-    | tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-    apt-get update
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+    apt-get update -qq
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
     systemctl enable --now docker
     success "Docker 安装完成"
@@ -45,47 +44,65 @@ else
     success "Docker 已安装"
 fi
 
-# 2. 检查并安装 Python 依赖
-info "检查 Python 依赖..."
-if ! python3 -c "import pymysql" 2>/dev/null; then
-    apt-get install -y python3-pymysql
-    success "Python 依赖安装完成"
-fi
-
-# 3. 检查 MySQL
-info "检查 MySQL..."
+# 2. 安装 MySQL
+info "[2/8] 检查 MySQL..."
 if ! systemctl is-active --quiet mysql && ! systemctl is-active --quiet mariadb; then
-    error "MySQL/MariaDB 未运行，请先安装并启动数据库"
+    info "安装 MariaDB..."
+    apt-get install -y mariadb-server
+    systemctl enable --now mariadb
+    success "MariaDB 安装完成"
+else
+    success "MySQL 已运行"
 fi
-success "MySQL 运行正常"
 
-# 4. 加载环境变量
+# 3. 生成 .env 配置
+info "[3/8] 生成配置文件..."
 if [[ ! -f .env ]]; then
-    error ".env 文件不存在"
+    DB_NAME="prism_$(generate_random | cut -c1-8)"
+    DB_USER="prism_$(generate_random | cut -c1-8)"
+    DB_PASS="$(generate_random)$(generate_random)"
+    JWT_SECRET="$(generate_random)$(generate_random)"
+    
+    cat > .env << ENV_EOF
+DB_NAME=${DB_NAME}
+DB_USER=${DB_USER}
+DB_PASS=${DB_PASS}
+JWT_SECRET=${JWT_SECRET}
+BACKEND_PORT=50000
+FRONTEND_PORT=50001
+REGISTER_PORT=50002
+LOG_DIR=/root/prism/logs
+ENV_EOF
+    success "配置文件已生成"
+else
+    success "配置文件已存在"
 fi
+
 source .env
 
-# 5. 检查数据库连接
-info "检查数据库..."
-if ! mysql -u root -e "USE $DB_NAME" 2>/dev/null; then
-    error "数据库 $DB_NAME 不存在或无法访问"
+# 4. 初始化数据库
+info "[4/8] 初始化数据库..."
+mysql -u root -e "CREATE DATABASE IF NOT EXISTS ${DB_NAME};" 2>/dev/null
+mysql -u root -e "CREATE USER IF NOT EXISTS '${DB_USER}'@'127.0.0.1' IDENTIFIED BY '${DB_PASS}';" 2>/dev/null
+mysql -u root -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'127.0.0.1'; FLUSH PRIVILEGES;" 2>/dev/null
+
+if ! mysql -u root ${DB_NAME} -e "SHOW TABLES LIKE 'user';" | grep -q user; then
+    info "导入数据库结构..."
+    mysql -u root ${DB_NAME} < schema.sql
+    success "数据库结构已导入"
+else
+    success "数据库已存在"
 fi
 
-# 修复数据库用户权限
-mysql -u root -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USER}'@'127.0.0.1' \
-IDENTIFIED BY '${DB_PASS}'; FLUSH PRIVILEGES;" 2>/dev/null || true
-success "数据库配置完成"
+# 5. 安装 Python 依赖
+info "[5/8] 安装 Python 依赖..."
+apt-get install -y python3-pymysql > /dev/null 2>&1
+success "Python 依赖已安装"
 
-# 6. 创建日志目录
+# 6. 启动后端服务
+info "[6/8] 启动后端服务..."
 mkdir -p logs
-chmod 755 logs
-
-# 7. 停止旧容器
-info "清理旧容器..."
 docker rm -f prism-backend 2>/dev/null || true
-
-# 8. 启动后端服务
-info "启动后端服务..."
 docker run -d --name prism-backend --network host --restart always \
   -e SPRING_DATASOURCE_URL="jdbc:mysql://127.0.0.1:3306/${DB_NAME}?useUnicode=true&characterEncoding=UTF-8&useSSL=false" \
   -e SPRING_DATASOURCE_USERNAME="${DB_USER}" \
@@ -95,124 +112,76 @@ docker run -d --name prism-backend --network host --restart always \
   -e SERVER_PORT="${BACKEND_PORT}" \
   -v ${PRISM_DIR}/backend.jar:/app/backend.jar \
   -v ${PRISM_DIR}/logs:/app/logs \
-  -w /app \
-  eclipse-temurin:21-jre java -jar backend.jar
-
+  -w /app eclipse-temurin:21-jre java -jar backend.jar > /dev/null
 sleep 3
-
-# 9. 检查后端状态
-if ! docker ps | grep -q prism-backend; then
+if docker ps | grep -q prism-backend; then
+    success "后端服务已启动"
+else
     error "后端启动失败，查看日志: docker logs prism-backend"
 fi
-success "后端服务启动成功"
 
-# 10. 配置 Nginx
-info "配置 Nginx..."
-if [[ ! -f /etc/nginx/conf.d/prism.conf ]]; then
-    cat > /etc/nginx/conf.d/prism.conf <<EOF
+# 7. 配置 Nginx
+info "[7/8] 配置 Nginx..."
+if ! command -v nginx &>/dev/null; then
+    apt-get install -y nginx > /dev/null 2>&1
+fi
+
+cat > /etc/nginx/conf.d/prism.conf << 'NGINX_EOF'
 server {
-    listen ${FRONTEND_PORT};
+    listen 50001;
     root /var/www/html/prism;
     index index.html;
     client_max_body_size 20M;
-
-    location / {
-        try_files \$uri \$uri/ /index.html;
-    }
-
+    location / { try_files $uri $uri/ /index.html; }
     location = /api/v1/user/register {
-        proxy_pass http://127.0.0.1:${REGISTER_PORT}/api/v1/user/register;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_read_timeout 30s;
+        proxy_pass http://127.0.0.1:50002/api/v1/user/register;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
     }
-
     location = /api/v1/user/init-status {
-        proxy_pass http://127.0.0.1:${REGISTER_PORT}/api/v1/user/init-status;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_read_timeout 10s;
+        proxy_pass http://127.0.0.1:50002/api/v1/user/init-status;
+        proxy_set_header Host $host;
     }
-
     location /api/ {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT}/api/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header Authorization \$http_authorization;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-    }
-
-    location /system-info {
-        proxy_pass http://127.0.0.1:${BACKEND_PORT}/system-info;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_read_timeout 3600s;
+        proxy_pass http://127.0.0.1:50000/api/;
+        proxy_set_header Host $host;
+        proxy_set_header Authorization $http_authorization;
     }
 }
-EOF
-fi
+NGINX_EOF
 
-# 11. 部署前端文件
-info "部署前端..."
 mkdir -p /var/www/html/prism
 cp -r ui/dist/* /var/www/html/prism/
-chmod -R 755 /var/www/html/prism
-
-# 12. 重启 Nginx
 systemctl restart nginx
 success "Nginx 配置完成"
 
-# 13. 启动注册服务
-info "启动注册服务..."
+# 8. 启动注册服务
+info "[8/8] 启动注册服务..."
 pkill -f register_proxy.py 2>/dev/null || true
 nohup python3 register_proxy.py > logs/register.log 2>&1 &
 sleep 2
-
-# 14. 验证服务
-info "验证服务状态..."
-ERRORS=0
-
-if ! ss -tlnp | grep -q ":${BACKEND_PORT}"; then
-    error "后端服务未监听端口 ${BACKEND_PORT}"
-    ERRORS=$((ERRORS+1))
+if ss -tlnp | grep -q ":${REGISTER_PORT}"; then
+    success "注册服务已启动"
+else
+    error "注册服务启动失败"
 fi
 
-if ! ss -tlnp | grep -q ":${FRONTEND_PORT}"; then
-    error "前端服务未监听端口 ${FRONTEND_PORT}"
-    ERRORS=$((ERRORS+1))
-fi
-
-if ! ss -tlnp | grep -q ":${REGISTER_PORT}"; then
-    error "注册服务未监听端口 ${REGISTER_PORT}"
-    ERRORS=$((ERRORS+1))
-fi
-
-if [[ $ERRORS -gt 0 ]]; then
-    error "部分服务启动失败"
-fi
-
-# 15. 获取访问地址
+# 获取服务器 IP
 SERVER_IP=$(curl -4 -s ifconfig.me 2>/dev/null || echo "YOUR_SERVER_IP")
 
 echo ""
-success "=========================================="
-success "Prism Panel 安装完成！"
-success "=========================================="
+success "════════════════════════════════════════"
+success "   Prism Panel 安装完成！"
+success "════════════════════════════════════════"
 echo ""
 info "访问地址: http://${SERVER_IP}:${FRONTEND_PORT}"
-info "后端 API: http://${SERVER_IP}:${BACKEND_PORT}"
-echo ""
-info "服务管理命令："
-info "  查看后端日志: docker logs -f prism-backend"
-info "  查看注册日志: tail -f ${PRISM_DIR}/logs/register.log"
-info "  重启后端: docker restart prism-backend"
-info "  重启 Nginx: systemctl restart nginx"
 echo ""
 warn "首次访问请注册管理员账户"
-success "=========================================="
+warn "第一个注册的用户将自动成为管理员"
+echo ""
+info "服务管理："
+info "  后端日志: docker logs -f prism-backend"
+info "  注册日志: tail -f ${PRISM_DIR}/logs/register.log"
+info "  重启后端: docker restart prism-backend"
+echo ""
+success "════════════════════════════════════════"
