@@ -158,7 +158,7 @@ success "Nginx 配置完成"
 # 8. 启动注册服务
 info "[8/8] 启动注册服务..."
 pkill -f register_proxy.py 2>/dev/null || true
-nohup python3 register_proxy.py > logs/register.log 2>&1 &
+DB_NAME=${DB_NAME} DB_USER=${DB_USER} DB_PASS=${DB_PASS} nohup python3 register_proxy.py > logs/register.log 2>&1 &
 sleep 2
 if ss -tlnp | grep -q ":${REGISTER_PORT}"; then
     success "注册服务已启动"

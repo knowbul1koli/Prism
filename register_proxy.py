@@ -14,12 +14,13 @@ import hashlib
 import time
 import http.server
 import pymysql
+import os
 
 DB_HOST = "127.0.0.1"
 DB_PORT = 3306
-DB_USER = "prism_8sbfh0jF"
-DB_PASS = "Q1dAVllKTQt1mkNYxa6Dja2c"
-DB_NAME = "prism_HMHd951u"
+DB_USER = os.getenv("DB_USER", "prism_user")
+DB_PASS = os.getenv("DB_PASS", "prism_pass")
+DB_NAME = os.getenv("DB_NAME", "prism_db")
 
 # Default quota for self-registered users
 DEFAULT_FLOW = 0         # GB
